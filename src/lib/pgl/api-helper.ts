@@ -1,15 +1,15 @@
 import { HTTP, HTTPResponse } from 'ionic-native';
 
-import { parse, serialize } from 'cookie';
+import * as cookieUtil from 'cookie';
 
-import { PGLRegion, PGLSite } from './login-api';
+import { PGLRegion, PGLLanguage, PGLSite } from './login-api';
 
 const API_BASE_URL = 'https://3ds.pokemon-gl.com/frontendApi/'
 
 export interface PGLCookie {
   __ulfpc?: string;
   region?: PGLRegion;
-  language_id?: string;
+  language_id?: PGLLanguage;
   site?: PGLSite;
   s_sq?: string;
   NO_MEMBER_DATA?: string;
@@ -22,16 +22,45 @@ export interface PGLCookie {
   _ga?: string;
 }
 
-export function postAPI(apiName: string, data: any, cookie: PGLCookie): Promise<HTTPResponse> {
-  let headers = {
-    'pragma': 'no-cache',
+function serializeCookies(cookie: PGLCookie): string {
+  return Object.keys(cookie).map(key => cookieUtil.serialize(key, cookie[key])).join('; ');
+}
+
+export function postAPI(
+  url: string, data: any, cookie: PGLCookie, setCookie = false
+): Promise<HTTPResponse> {
+  let headers = ({
     'origin': 'https://3ds.pokemon-gl.com',
-    'accept-encoding': 'gzip, deflate, br',
     'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
-    'accept': 'application/json, text/javascript, */*; q=0.01',
     'referer': 'https://3ds.pokemon-gl.com/',
-    'x-requested-with': 'XMLHttpRequest',
-    'cookie': serialize(cookie)
-  }
-  return HTTP.post(API_BASE_URL + apiName, data, headers);
+    'user-agent': 'Mozilla/5.0 (X11; Fedora; Linux x86_64) ' +
+      'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36',
+    'cookie': serializeCookies(cookie)
+  });
+  console.log(url);
+  console.log(data);
+  console.log(headers);
+  return HTTP.post(url, data, headers).then(response => {
+    console.log(response);
+    if (setCookie && 'Set-Cookie' in response.headers) {
+      let newcookies = response.headers['Set-Cookie'].split(',');
+      newcookies.forEach(ck => {
+        let nck = cookieUtil.parse(ck);
+        Object.keys(nck).forEach(key => {
+          let p = key.toUpperCase();
+          if (p !== 'DOMAIN' && p !== 'PATH') {
+            cookie[key] = nck[key];
+            console.log(`setting cookie ${key} to ${cookie[key]}`);
+          }
+        });
+      })
+    }
+    return response;
+  });
+}
+
+export function postFrontendAPI(
+  apiName: string, data: any, cookie: PGLCookie, setCookie = false
+): Promise<HTTPResponse> {
+  return postAPI(API_BASE_URL + apiName, data, cookie, setCookie);
 }
